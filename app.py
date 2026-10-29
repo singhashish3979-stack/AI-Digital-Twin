@@ -1,15 +1,12 @@
-import streamlit as st
-import pandas as pd
-import json
+
+import random
 import time
-from pathlib import Path
+from datetime import datetime
+
+import pandas as pd
+import streamlit as st
 
 from anomaly_detection import detect_anomaly
-
-
-# =============================
-# PAGE SETTINGS
-# =============================
 
 st.set_page_config(
     page_title="AI Digital Twin",
@@ -17,223 +14,74 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("⚙️ AI Driven Digital Twin")
+st.title("AI Driven Digital Twin")
 st.subheader("Smart Factory Machine Monitoring Dashboard")
+st.caption("Online demo | Simulated machine readings")
 
+# Store readings during the current app session
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-# =============================
-# FILE PATHS
-# =============================
+# Generate one simulated machine reading
+reading = {
+    "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    "temperature": round(random.uniform(50, 85), 2),
+    "vibration": round(random.uniform(1, 4.5), 2),
+    "rpm": random.randint(1200, 1800),
+    "pressure": round(random.uniform(3, 6), 2),
+}
 
-BASE_DIR = Path(__file__).parent
+st.session_state.history.append(reading)
+st.session_state.history = st.session_state.history[-100:]
 
-LIVE_FILE = BASE_DIR / "live_data.json"
-HISTORY_FILE = BASE_DIR / "machine_data.csv"
+history = pd.DataFrame(st.session_state.history)
+latest = history.iloc[-1]
 
-
-# =============================
-# READ LIVE DATA
-# =============================
-
-if not LIVE_FILE.exists():
-
-    st.warning("Waiting for live machine data...")
-
-    time.sleep(2)
-    st.rerun()
-
-
-try:
-
-    with open(LIVE_FILE, "r") as file:
-        latest = json.load(file)
-
-except Exception:
-
-    st.warning("Reading live machine data...")
-
-    time.sleep(2)
-    st.rerun()
-
-
-# =============================
-# SENSOR VALUES
-# =============================
-
-temperature = float(latest.get("temperature", 0))
-vibration = float(latest.get("vibration", 0))
-rpm = float(latest.get("rpm", 0))
-pressure = float(latest.get("pressure", 0))
-
-
-# =============================
-# AI ANOMALY DETECTION
-# =============================
+temperature = float(latest["temperature"])
+vibration = float(latest["vibration"])
+rpm = float(latest["rpm"])
+pressure = float(latest["pressure"])
 
 status, reasons = detect_anomaly(
-    temperature,
-    vibration,
-    rpm,
-    pressure
+    temperature, vibration, rpm, pressure
 )
 
+st.divider()
+st.subheader("Machine Status")
 
 if status == "ANOMALY":
-
-    display_status = "🔴 AI ANOMALY DETECTED"
-
+    st.error("AI ANOMALY DETECTED")
 elif status == "WARNING":
-
-    display_status = "🟡 AI WARNING"
-
+    st.warning("AI WARNING")
 else:
+    st.success("AI NORMAL")
 
-    display_status = "🟢 AI NORMAL"
-
-
-# =============================
-# LIVE SENSOR CARDS
-# =============================
+if reasons:
+    st.write("Detected issues: " + ", ".join(reasons))
 
 st.divider()
+st.subheader("Live Sensor Readings")
 
 col1, col2, col3, col4 = st.columns(4)
 
-
-with col1:
-
-    st.metric(
-        "🌡️ Temperature",
-        f"{temperature:.2f} °C"
-    )
-
-
-with col2:
-
-    st.metric(
-        "📳 Vibration",
-        f"{vibration:.2f} mm/s"
-    )
-
-
-with col3:
-
-    st.metric(
-        "⚙️ RPM",
-        f"{rpm:.0f}"
-    )
-
-
-with col4:
-
-    st.metric(
-        "🔵 Pressure",
-        f"{pressure:.2f} bar"
-    )
-
-
-# =============================
-# AI STATUS
-# =============================
+col1.metric("Temperature", f"{temperature:.2f} °C")
+col2.metric("Vibration", f"{vibration:.2f} mm/s")
+col3.metric("RPM", f"{rpm}")
+col4.metric("Pressure", f"{pressure:.2f} bar")
 
 st.divider()
-
-st.subheader("Machine Status")
-
-st.markdown(f"# {display_status}")
-
-
-if reasons:
-
-    st.write("**AI Detection Reason:**")
-
-    for reason in reasons:
-
-        st.write("⚠️", reason)
-
-else:
-
-    st.write("AI detected no abnormal machine condition.")
-
-
-# =============================
-# SAVE HISTORY
-# =============================
-
-new_data = pd.DataFrame([
-    {
-        "temperature": temperature,
-        "vibration": vibration,
-        "rpm": rpm,
-        "pressure": pressure
-    }
-])
-
-
-if HISTORY_FILE.exists():
-
-    try:
-
-        old_data = pd.read_csv(HISTORY_FILE)
-
-        history = pd.concat(
-            [old_data, new_data],
-            ignore_index=True
-        )
-
-    except Exception:
-
-        history = new_data
-
-else:
-
-    history = new_data
-
-
-history = history.tail(100)
-
-history.to_csv(
-    HISTORY_FILE,
-    index=False
-)
-
-
-# =============================
-# LIVE CHART
-# =============================
-
-st.divider()
-
-st.subheader("📊 Live Machine Data")
+st.subheader("Machine Data Trend")
 
 st.line_chart(
-    history[
-        [
-            "temperature",
-            "vibration",
-            "rpm",
-            "pressure"
-        ]
+    history.set_index("timestamp")[
+        ["temperature", "vibration", "rpm", "pressure"]
     ]
 )
 
-
-# =============================
-# RECENT DATA
-# =============================
-
 st.subheader("Latest Sensor Records")
+st.dataframe(history.tail(10), width="stretch", hide_index=True)
 
-st.dataframe(
-    history.tail(10),
-    width="stretch"
-)
-
-
-# =============================
-# AUTO REFRESH
-# =============================
+st.caption("Refresh interval: 2 seconds | Demo data only")
 
 time.sleep(2)
-
 st.rerun()
